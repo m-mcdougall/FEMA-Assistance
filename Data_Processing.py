@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import pandas as pd
-import matplotlib.pyplot as plt
 import os
 import numpy as np
-from sklearn.linear_model import LinearRegression
 
 
 #Set working directory
@@ -14,18 +12,14 @@ os.chdir(raw_wd)
 
 pd.set_option('display.max_columns', None)
 
-
-
 #%%
 
 
 ## Start with loading the Disaster Declaration Summaries
-
 disasters = pd.read_csv('DisasterDeclarationsSummaries.csv', parse_dates=[4,5,12,13,14])
 
 
-#Select columns to keep
-
+###Select columns to keep
 
 #These variables are specific to the record, not the event
 disasters = disasters.drop(['hash','lastRefresh', 'id' ], axis=1)
@@ -43,8 +37,7 @@ disasters = disasters.drop(['placeCode'], axis=1)
 public = pd.read_csv('PublicAssistanceFundedProjectsSummaries.csv', parse_dates=[1])
 
 
-
-#Select columns to keep
+###Select columns to keep
 
 #These variables are specific to the record, not the event
 public = public.drop(['hash','lastRefresh', 'id' ], axis=1)
@@ -79,7 +72,7 @@ private_rent = pd.read_csv('HousingAssistanceRenters.csv', low_memory=False)
 
 private_rent = private_rent.drop(['id' ], axis=1)
 
-#This is likely too specific. We'll keept the total number of inspected, but leave out how much each cost
+#This is likely too specific. We'll keep the total number of inspected, but leave out how much each cost
 private_rent = private_rent.drop(['approvedBetween1And10000', 'approvedBetween10001And25000', 'approvedBetween25001AndMax',
                         'totalMaxGrants','totalInspectedWithNoDamage',
                         'totalWithModerateDamage', 'totalWithMajorDamage',
@@ -157,6 +150,7 @@ zips_private = zips.filter(['fipsStateCode', 'fipsCountyCode', 'ZIP'])
 zips_private=zips_private.rename(columns={'ZIP':'zipCode'})
 zips_private['zipCode']=zips_private['zipCode'].astype(str)
 
+#Add the fips codes
 private=private.merge(zips_private, on=['zipCode'], how='left')
 
 
@@ -176,6 +170,7 @@ for state in zips_public['state'].unique():
 public['county'] = public['county'].str.replace(' \(CA\)','')
 
 
+#Add the fips codes to the public set
 public=public.merge(zips_public, on=['county', 'state'], how='left')
 
 
@@ -188,7 +183,6 @@ public=public.merge(zips_public, on=['county', 'state'], how='left')
 #Group and aggregate the data to have one request summary pre disaster
 #Originally organized by individual releif request.
 
-
 private_group=private.drop(['zipCode'], axis=1)
 private_group=private_group.groupby(['disasterNumber','fipsStateCode', 'fipsCountyCode']).sum().reset_index()
 
@@ -198,7 +192,6 @@ public_group=public.groupby(['disasterNumber','state', 'county']).agg({'numberOf
 #%%
 
 #Merge private and public
-
 
 private_group.rename({'totalDamage': 'PrivateDamage', 'totalApprovedIhpAmount':"PrivateApproved",
                 'approvedForFemaAssistance':"PrivateNumberApproved"}, axis=1, inplace=True)
@@ -247,9 +240,14 @@ aidRequests=aidRequests.fillna(0)
 
 #%%
 
-#Check how many are in all sets
+#Merge in all the aid requests into the full catalogue of Disaster delarations
+dataDisasters = disasters.merge(aidRequests, on=['disasterNumber','fipsStateCode', 'fipsCountyCode'], how='left')
 
-#ids_dis=disasters.disasterNumber.unique()
-#ids_pub=public.disasterNumber.unique()
-#ids_pvt=private.disasterNumber.unique()
+#Drop disasters that did not get spending information associated with them.
+dataDisasters=dataDisasters.dropna()
+
+#Save the dataset to file
+dataDisasters.to_csv(wd+'//DataDisasters.csv', index=False)
+
+
 
