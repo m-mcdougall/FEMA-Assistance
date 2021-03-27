@@ -170,7 +170,7 @@ zips_public=zips_public.drop_duplicates()
 #Add a "statewide" option
 for state in zips_public['state'].unique():
     sample=zips_public[zips_public.state == state].iloc[0,:]
-    zips_public = zips_public.append({'fipsStateCode':sample.fipsStateCode, 'fipsCountyCode':np.nan, 'county':'Statewide', 'state':state}, ignore_index=True)
+    zips_public = zips_public.append({'fipsStateCode':sample.fipsStateCode, 'fipsCountyCode':999, 'county':'Statewide', 'state':state}, ignore_index=True)
 
 #Alaska needs additional filtering
 public['county'] = public['county'].str.replace(' \(CA\)','')
@@ -216,23 +216,34 @@ aidRequests=public_group.merge(private_group, on=['disasterNumber','fipsStateCod
 fill_in = aidRequests[aidRequests.state.isna()].copy()
 
 
-
+#Create and ID of the fips state and county codes
 fill_in['ID']=fill_in.fipsStateCode.astype(int).astype(str)+'-'+fill_in.fipsCountyCode.astype(int).astype(str)
 fill_in=fill_in.reset_index()
 fill_in.index=fill_in.ID
 
+#Create and ID of the fips state and county codes
 zips_ids = zips.copy()
 zips_ids['ID']=zips_ids.fipsStateCode.astype(int).astype(str)+'-'+zips_ids.fipsCountyCode.astype(int).astype(str)
 zips_ids.index=zips_ids.ID
 zips_ids=zips_ids.filter([ 'county', 'state'], axis=1).drop_duplicates()
 
 
+#Merge the state and county information based on the IDs created above
 fill_in.county = zips_ids.county
 fill_in.state = zips_ids.state
 
-
+#Reset to the original index, drop unneeded columns
 fill_in.index=fill_in['index']
 fill_in=fill_in.drop(['index', 'ID'], axis=1)
+
+#%%
+
+#Return the filled-in values to the aid requests
+aidRequests.loc[fill_in.index, :] = fill_in
+
+#Fill the nan values (which are now exclusively numeric)
+aidRequests=aidRequests.fillna(0)
+
 
 #%%
 
