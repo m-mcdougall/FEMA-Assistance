@@ -13,3 +13,4 @@ Public Assistance - [https://www.fema.gov/openfema-data-page/public-assistance-f
 ### Supplementary Data
 
 Zip code to FIPS lookup  - [https://data.world/niccolley/us-zipcode-to-county-state]
+List of US State abbreviations - [https://gist.github.com/rogerallen/1583593]

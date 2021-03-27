@@ -13,6 +13,9 @@ raw_wd=wd+'//Raw//'
 os.chdir(raw_wd)
 
 pd.set_option('display.max_columns', None)
+
+
+
 #%%
 
 
@@ -33,7 +36,6 @@ disasters = disasters.drop(['fyDeclared'], axis=1)
 #This is an internal code, not needed
 disasters = disasters.drop(['placeCode'], axis=1)
 
-disasters.disasterNumber.unique().shape[0] == disasters.shape[0]
 
 #%%
 
@@ -47,6 +49,13 @@ public = pd.read_csv('PublicAssistanceFundedProjectsSummaries.csv', parse_dates=
 #These variables are specific to the record, not the event
 public = public.drop(['hash','lastRefresh', 'id' ], axis=1)
 
+
+#FEMA did not used to look at counties within PR, so add a special category so they get covered too
+old_pr=public.loc[public['state']=='Puerto Rico', 'county'].isna()
+old_pr=old_pr[old_pr==True].index.values
+
+for i in old_pr:
+    public.loc[i, 'county'] = 'Statewide'
 
 #%%
 
@@ -118,7 +127,12 @@ for col in columns_dict:
 del private_own_filter,private_rent_filter, private_own, private_rent, columns_dict, col
 #%%
 
+#Load the zip code - Fips file
 zips = pd.read_csv(wd+'\\ZIP-COUNTY-FIPS_2018-03.csv')
+
+#Get a list of us state abbreviations
+runfile(os.path.abspath('../../')+'//UsStateAbbreviations.py')
+
 
 #Seperate the Fips Codes int state and county
 zips['fipsStateCode'] = zips['STCOUNTYFP'].astype('str').str[:-3]
@@ -128,7 +142,14 @@ zips['fipsCountyCode'] = zips['STCOUNTYFP'].astype('str').str[-3:]
 zips['fipsCountyCode'] = zips['fipsCountyCode'] .astype(int)
 
 #Seperate out the county name
-zips['county'] = zips['COUNTYNAME'].str.replace('County','')
+zips['county'] = zips['COUNTYNAME'].str.replace(' County','')
+zips['county'] = zips['county'].str.replace(' Municipio','')
+
+#Make a full text version of the state name
+zips['state'] = zips['STATE'].replace(abbrev_us_state)
+zips=zips.drop(['STATE'], axis=1)
+
+
 
 
 #Merge into the Private data
@@ -139,16 +160,85 @@ zips_private['zipCode']=zips_private['zipCode'].astype(str)
 private=private.merge(zips_private, on=['zipCode'], how='left')
 
 
-#%%
+
+
 #Merge into Public Data
+zips_public = zips.filter(['fipsStateCode', 'fipsCountyCode', 'county', 'state'])
+zips_public=zips_public.drop_duplicates()
 
 
+#Add a "statewide" option
+for state in zips_public['state'].unique():
+    sample=zips_public[zips_public.state == state].iloc[0,:]
+    zips_public = zips_public.append({'fipsStateCode':sample.fipsStateCode, 'fipsCountyCode':np.nan, 'county':'Statewide', 'state':state}, ignore_index=True)
+
+#Alaska needs additional filtering
+public['county'] = public['county'].str.replace(' \(CA\)','')
+
+
+public=public.merge(zips_public, on=['county', 'state'], how='left')
+
+
+
+
+
+
+#%%
+
+#Group and aggregate the data to have one request summary pre disaster
+#Originally organized by individual releif request.
+
+
+private_group=private.drop(['zipCode'], axis=1)
+private_group=private_group.groupby(['disasterNumber','fipsStateCode', 'fipsCountyCode']).sum().reset_index()
+
+public_group=public.groupby(['disasterNumber','state', 'county']).agg({'numberOfProjects': np.sum,'federalObligatedAmount': np.sum,
+              'fipsStateCode':'first', 'fipsCountyCode':'first'}).reset_index()
+
+#%%
+
+#Merge private and public
+
+
+private_group.rename({'totalDamage': 'PrivateDamage', 'totalApprovedIhpAmount':"PrivateApproved",
+                'approvedForFemaAssistance':"PrivateNumberApproved"}, axis=1, inplace=True)
+
+
+
+public_group.rename({'numberOfProjects': 'PublicProjectNumber', 'federalObligatedAmount':"PublicApproved"},
+                    axis=1, inplace=True)
+
+
+aidRequests=public_group.merge(private_group, on=['disasterNumber','fipsStateCode', 'fipsCountyCode'], how='outer')
+
+#%%
+#These are the private requests for aid in counties that did not request FEMA aid, or received it through state-wide funds
+fill_in = aidRequests[aidRequests.state.isna()].copy()
+
+
+
+fill_in['ID']=fill_in.fipsStateCode.astype(int).astype(str)+'-'+fill_in.fipsCountyCode.astype(int).astype(str)
+fill_in=fill_in.reset_index()
+fill_in.index=fill_in.ID
+
+zips_ids = zips.copy()
+zips_ids['ID']=zips_ids.fipsStateCode.astype(int).astype(str)+'-'+zips_ids.fipsCountyCode.astype(int).astype(str)
+zips_ids.index=zips_ids.ID
+zips_ids=zips_ids.filter([ 'county', 'state'], axis=1).drop_duplicates()
+
+
+fill_in.county = zips_ids.county
+fill_in.state = zips_ids.state
+
+
+fill_in.index=fill_in['index']
+fill_in=fill_in.drop(['index', 'ID'], axis=1)
 
 #%%
 
 #Check how many are in all sets
 
-ids_dis=disasters.disasterNumber.unique()
-ids_pub=public.disasterNumber.unique()
-ids_pvt=private.disasterNumber.unique()
+#ids_dis=disasters.disasterNumber.unique()
+#ids_pub=public.disasterNumber.unique()
+#ids_pvt=private.disasterNumber.unique()
 
