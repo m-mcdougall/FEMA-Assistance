@@ -82,29 +82,73 @@ private_rent = private_rent.drop(['approvedBetween1And10000', 'approvedBetween10
 
 
 #Filter for only columns we intend to use
-private_own_filter=private_own.filter(['disasterNumber', 'totalDamage', 'totalApprovedIhpAmount', 'approvedForFemaAssistance', 'rentalAmount'])
-private_rent_filter=private_rent.filter(['disasterNumber', 'totalApprovedIhpAmount', 'approvedForFemaAssistance'])
+private_own_filter=private_own.filter(['disasterNumber', 'totalDamage', 'totalApprovedIhpAmount', 'approvedForFemaAssistance', 'rentalAmount', 'zipCode'])
+private_rent_filter=private_rent.filter(['disasterNumber', 'totalApprovedIhpAmount', 'approvedForFemaAssistance', 'zipCode'])
 
 #Groupby the diaster, and get the total amount for each value (originally seperated by zip code)
 #Remove the rental amount - this is for private homeowners, by the looks
-private_own_filter=private_own_filter.groupby('disasterNumber').sum()
+private_own_filter=private_own_filter.groupby(['disasterNumber', 'zipCode']).sum().reset_index()
 private_own_filter['totalApprovedIhpAmount'] = private_own_filter['totalApprovedIhpAmount'] - private_own_filter['rentalAmount']
 private_own_filter.drop(['rentalAmount'], axis=1, inplace=True)
 
 
 #Groupby the diaster, and get the total amount for each value (originally seperated by zip code)
-private_rent_filter=private_rent_filter.groupby('disasterNumber').sum()
-private_rent_filter['totalDamage']=0
+private_rent_filter=private_rent_filter.groupby(['disasterNumber', 'zipCode']).sum().reset_index()
+
+columns_dict={col:col+'_rental' for col in private_rent_filter.columns if col not in ['disasterNumber', 'zipCode']}
+private_rent_filter=private_rent_filter.rename(columns=columns_dict)
 
 
-private=private_own_filter+private_rent_filter
+#Merge the Owner and rental dataframes together
+private=private_own_filter.merge(private_rent_filter, on=['disasterNumber', 'zipCode'], how='left')
+private=private.fillna(0) #Fill gaps that arise (Disaster zip codes that did not have rental claims)
 
-del private_own_filter,private_rent_filter, private_own, private_rent
+
+#Add together the relevant columns, then drop the extras
+
+for col in columns_dict:
+    print(f'\n {col}')
+    print(f'{private[col].iloc[15]} + {private[columns_dict[col]].iloc[15]}')
+    private[col] = private[col] +private[columns_dict[col]]
+    print(f'{private[col].iloc[15]}')
+
+    private=private.drop(columns_dict[col], axis=1)
+
+
+del private_own_filter,private_rent_filter, private_own, private_rent, columns_dict, col
+#%%
+
+zips = pd.read_csv(wd+'\\ZIP-COUNTY-FIPS_2018-03.csv')
+
+#Seperate the Fips Codes int state and county
+zips['fipsStateCode'] = zips['STCOUNTYFP'].astype('str').str[:-3]
+zips['fipsStateCode'] = zips['fipsStateCode'] .astype(int)
+
+zips['fipsCountyCode'] = zips['STCOUNTYFP'].astype('str').str[-3:]
+zips['fipsCountyCode'] = zips['fipsCountyCode'] .astype(int)
+
+#Seperate out the county name
+zips['county'] = zips['COUNTYNAME'].str.replace('County','')
+
+
+#Merge into the Private data
+zips_private = zips.filter(['fipsStateCode', 'fipsCountyCode', 'ZIP'])
+zips_private=zips_private.rename(columns={'ZIP':'zipCode'})
+zips_private['zipCode']=zips_private['zipCode'].astype(str)
+
+private=private.merge(zips_private, on=['zipCode'], how='left')
+
+
+#%%
+#Merge into Public Data
+
+
+
 #%%
 
 #Check how many are in all sets
 
 ids_dis=disasters.disasterNumber.unique()
 ids_pub=public.disasterNumber.unique()
-ids_pvt=private_own.disasterNumber.unique()
+ids_pvt=private.disasterNumber.unique()
 
