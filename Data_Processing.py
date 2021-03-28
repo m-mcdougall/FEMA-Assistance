@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+#To be run first.
+
 import pandas as pd
 import os
 import numpy as np
