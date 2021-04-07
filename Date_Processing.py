@@ -61,12 +61,11 @@ for i in range(disasters.shape[0]):
 
 x=pd.concat(all_disasters_days)
     
-    
+#Save the dataset to file
+x.to_csv(wd+'//DailyDisasters.csv', index=False) 
 #%%
 
-y=x.groupby('Date').sum().reset_index()
 
-y.plot('Date', 'PrivateDamage')
     
     
     
